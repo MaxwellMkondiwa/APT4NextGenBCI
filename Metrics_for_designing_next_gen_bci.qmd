@@ -1,0 +1,279 @@
+---
+title: "Metrics for designing Next Gen BCI"
+format: 
+    html:
+      code-fold: true
+      code-tools: true
+fig-dpi: 300
+fig-align: center
+
+
+self-contained: true
+
+
+editor: visual
+toc: true
+toc-location: left
+number-sections: true
+execute: 
+  message: false
+  warning: false
+  echo: true
+---
+
+# Introduction
+
+# Example using LTEs
+
+```{r}
+
+
+
+
+
+
+
+
+```
+
+# Coefficient of Variation
+
+```{r}
+
+
+
+
+
+
+
+```
+
+# Conditional Value at Risk
+
+```{r}
+
+
+# --- Simulate 10 years of yield data ---
+set.seed(123)
+years <- 1:10
+yield <- rnorm(10, mean = 4.5, sd = 0.8)  # e.g., tons per hectare
+
+data=data.frame(year = years, yield = yield)
+
+# --- CVaR function ---
+cvar <- function(x, alpha = 0.1) {
+  q <- quantile(x, probs = alpha)
+  mean(x[x <= q])
+}
+
+# --- Compute CVaR at 10% and 20% ---
+cvar_10 <- cvar(data$yield, alpha = 0.10)
+cvar_20 <- cvar(data$yield, alpha = 0.20)
+
+cat("CVaR at 10%:", cvar_10, "\n")
+cat("CVaR at 20%:", cvar_20, "\n")
+
+# --- Visualization ---
+hist(yield, breaks = 8, col = "lightblue", main = "Yield Distribution",
+     xlab = "Yield (tons/ha)")
+abline(v = quantile(yield, 0.10), col = "red", lwd = 2, lty = 2)
+abline(v = quantile(yield, 0.20), col = "orange", lwd = 2, lty = 2)
+legend("topright", legend = c("10% quantile", "20% quantile"),
+       col = c("red", "orange"), lty = 2, lwd = 2)
+
+
+
+```
+
+# Certainty equivalent income
+
+```{r}
+
+set.seed(123)
+
+# Parameters
+W <- 1000          # initial wealth
+premium <- 50      # insurance premium
+risk_aversion <- 2 # CRRA coefficient
+
+# Simulate yield shocks and indemnities
+n <- 1000
+yield_loss <- rbinom(n, 1, 0.2) * runif(n, 0, 300)  # 20% chance of loss
+indemnity <- yield_loss                             # insurance pays loss
+
+# Utility function (CRRA)
+U <- function(x, rho) ifelse(rho == 1, log(x), (x^(1-rho))/(1-rho))
+
+# Expected utility with insurance
+EU_ins <- mean(U(W - premium + indemnity, risk_aversion))
+
+# Certainty equivalent
+CE <- (EU_ins * (1 - risk_aversion))^(1/(1 - risk_aversion))
+
+cat("Certainty Equivalent with Insurance:", CE, "\n")
+
+```
+
+# Copula
+
+The copula analysis answers the question
+
+- Has the resilience of major cereals improved over time?
+
+- What's the tail dependence of climatic variables, mean cereal yields, yield variance and crop yield dependence?
+
+## Using ICRISAT District Data
+
+```{r}
+library(rio)
+
+Kumar_Khanna2023=import("Kumar and Khanna 2023.dta")
+
+library(janitor)
+
+Kumar_Khanna2023=clean_names(Kumar_Khanna2023)
+  
+names(Kumar_Khanna2023)
+
+Kumar_Khanna2023$maizeyieldkgperha=as.numeric(Kumar_Khanna2023$maizeyieldkgperha)
+
+Kumar_Khanna2023$riceyieldkgperha[Kumar_Khanna2023$riceyieldkgperha> quantile(Kumar_Khanna2023$riceyieldkgperha, 0.99, na.rm = TRUE)] <- NA
+
+Kumar_Khanna2023$riceyieldkgperha[Kumar_Khanna2023$riceyieldkgperha< quantile(Kumar_Khanna2023$riceyieldkgperha, 0.01, na.rm = TRUE)] <- NA
+
+Kumar_Khanna2023$maizeyieldkgperha[Kumar_Khanna2023$maizeyieldkgperha> quantile(Kumar_Khanna2023$maizeyieldkgperha, 0.99, na.rm = TRUE)] <- NA
+
+Kumar_Khanna2023$maizeyieldkgperha[Kumar_Khanna2023$maizeyieldkgperha< quantile(Kumar_Khanna2023$maizeyieldkgperha, 0.01, na.rm = TRUE)] <- NA
+
+tail(sort(Kumar_Khanna2023$maizeyieldkgperha))
+
+head(sort(Kumar_Khanna2023$maizeyieldkgperha))
+
+Kumar_Khanna2023$maizeyieldtperha=Kumar_Khanna2023$maizeyieldkgperha/1000
+
+Kumar_Khanna2023$riceyieldtperha=Kumar_Khanna2023$riceyieldkgperha/1000
+
+Kumar_Khanna2023$wheatyieldtperha=Kumar_Khanna2023$wheatyieldkgperha/1000
+
+Kumar_Khanna2023$time_trend=Kumar_Khanna2023$year-1966
+
+Kumar_Khanna2023_sm=na.omit(Kumar_Khanna2023)
+# Write formulae for parameters for the mean model, sigma model, and inefficiency model
+# We use the original functional forms: identity for mean model, log sigma for sigma model and log ineff for the inefficiency
+
+# Load packages
+library("dplyr")
+library("mgcv")
+library("dsfa")
+library("gamlss")
+library("gamlss.add")
+library("GJRM")
+
+# Function for copula dependence parameter
+delta_rw<-~~s(time_trend)
+delta_rm<-~~time_trend
+delta_wm<-~~time_trend
+
+# Multi-output stochastic frontier with normal copula
+
+# Output 1 frontier
+mu_1_formula<-riceyieldtperha~s(time_trend)
+sigma_v1_formula<-~s(time_trend)
+sigma_u1_formula<-~s(time_trend)
+
+# Output 2 frontier: wheat
+mu_2_formula<-wheatyieldtperha~s(time_trend)
+sigma_v2_formula<-~s(time_trend)
+sigma_u2_formula<-~s(time_trend)
+
+# Output 3 frontier: maize
+mu_3_formula<-maizeyieldtperha~s(time_trend)
+sigma_v3_formula<-~s(time_trend)
+sigma_u3_formula<-~s(time_trend)
+
+model_normal<-dsfa(formula=list(
+  mu_1_formula,sigma_v1_formula,sigma_u1_formula, 
+  mu_2_formula,sigma_v2_formula,sigma_u2_formula,
+  delta_rw), data=Kumar_Khanna2023_sm,family=comper_mv(s=c(-1,-1), distr=c("normhnorm","normhnorm","normal")),
+                   optimizer="efs",
+                   control=list(trace=TRUE))
+
+summary(model_normal)
+plot(model_normal)
+inefficiency<-efficiency(model_normal);
+summary(inefficiency)
+
+
+# Clayton
+model_clayton <-dsfa(formula=list(mu_1_formula,sigma_v1_formula,sigma_u1_formula, mu_2_formula,sigma_v2_formula,sigma_u2_formula,delta_rw), data=Kumar_Khanna2023_sm,family=comper_mv(s=c(-1,-1), distr=c("normhnorm","normhnorm","clayton")),
+                     optimizer="efs",
+                     control=list(trace=TRUE))
+summary(model_clayton)
+plot(model_clayton)
+inefficiency_clayton <-efficiency(model_clayton);
+summary(inefficiency_clayton)
+
+
+# Joe
+#model_joe <-dsfa(formula=list(mu_1_formula,sigma_v1_formula,sigma_u1_formula, mu_2_formula,sigma_v2_formula,sigma_u2_formula,delta_rw), data=Kumar_Khanna2023_sm,family=comper_mv(s=c(-1,-1), distr=c("normhnorm","normhnorm","joe")),
+ #                optimizer="efs",
+#                 control=list(trace=TRUE))
+
+#summary(model_joe)
+#plot(model_joe)
+#inefficiency_joe <-efficiency(model_joe);
+#summary(inefficiency_joe)
+
+
+# Gumbel
+#model_gumbel <-dsfa(formula=list(mu_1_formula,sigma_v1_formula,sigma_u1_formula, mu_2_formula,sigma_v2_formula,sigma_u2_formula,delta_rw), data=Kumar_Khanna2023_sm,family=comper_mv(s=c(-1,-1), distr=c("normhnorm","normhnorm","joe")),
+#                    optimizer="efs",
+#                    control=list(trace=TRUE))
+
+#summary(model_gumbel)
+#plot(model_gumbel)
+#inefficiency_gumbel <-efficiency(model_gumbel);
+#summary(inefficiency_gumbel)
+
+# Compare the copula models
+
+AIC(model_normal)
+AIC(model_clayton)
+#AIC(model_joe)
+#AIC(model_gumbel)
+
+BIC(model_normal)
+BIC(model_clayton)
+#BIC(model_joe)
+#BIC(model_gumbel)
+
+# The normal model is the best
+summary(inefficiency[,1])
+
+# Kendall's tau
+library("VineCopula") 
+
+param<-model_normal$fitted.values[1,7] 
+
+if(model_normal$family$distr[3]=="normal"){
+  copula::tau(copula::normalCopula(param))
+}
+
+
+
+```
+
+# Differentiated demand model
+
+Armed with the relevant risk metrics of the insurance products (including CV, CVaR, and copula tail dependence), we add these to match these in a BLP style to demographics in survey datasets.
+
+```{r}
+
+
+
+
+
+
+
+
+```

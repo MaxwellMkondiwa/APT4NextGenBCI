@@ -1,0 +1,316 @@
+---
+title: "Risk-return tradeoffs in crop and resource management practices for sustainable future cereal based cropping systems"
+format: 
+    html:
+      code-fold: true
+      code-tools: true
+fig-dpi: 300
+fig-width: 8.88
+fig-align: center
+fig-height: 5
+
+self-contained: true
+author: Maxwell Mkondiwa (m.mkondiwa@cgiar.org)
+editor: visual
+toc: true
+toc-location: left
+number-sections: true
+execute: 
+  message: false
+  warning: false
+  echo: true
+---
+
+# Introduction
+
+In this notebook, we use mean-variance and mean-conditional value at risk optimization techniques to analyse the risk-return trade-offs
+
+# Data cleaning
+
+```{r}
+rm(list=ls())         # clear 
+
+library(sp)
+library(dplyr)
+library(rio)
+library(readxl)
+library(tidyr)
+
+## Loading required package: agro
+#if (!require(agro))  source("https://install-github.me/reagro/agro")
+
+#ff <- agro::get_data_from_uri("hdl:11529/11082", ".")
+#ff
+#remotes::install_github('carob-data/yuri')
+library("yuri")
+
+ff=yuri::dataURI ("hdl:11529/11082", ".")
+ff
+CSISA_platform_trial <- read.csv("./hdl_11529_11082/RawData_RP1.csv", stringsAsFactors=FALSE)
+
+#CSISA_platform_trial
+
+CSISA_platform_trial$SCENARIO_DET=paste0(CSISA_platform_trial$SCENARIO,CSISA_platform_trial$CEST,CSISA_platform_trial$TILL)
+```
+
+# Kharif Example
+
+## Risk metrics
+
+```{r}
+# Descriptive statistics 
+#install.packages("remotes")
+#remotes::install_github("TimothyKBook/rutilstb")
+library(modelsummary)
+
+library(rutilstb)
+
+CSISA_platform_trial_k=subset(CSISA_platform_trial,CSISA_platform_trial$SEASON=="Kharif")
+
+rice_yield=tabstat(CSISA_platform_trial_k, var=c("YIELD"),by="SCENARIO")
+rice_yield
+```
+
+## Yield optimization
+
+```{r}
+library(psych)
+
+CSISA_platform_trial_kharif=describeBy(CSISA_platform_trial_k[,c("YIELD","YEAR","SCENARIO")], group=c("YEAR","SCENARIO"), mat=TRUE)
+
+CSISA_platform_trial_kharif=subset(CSISA_platform_trial_kharif,!(is.na(CSISA_platform_trial_kharif$n)))
+
+CSISA_platform_trial_kharif=subset(CSISA_platform_trial_kharif,CSISA_platform_trial_kharif$vars==1)
+
+
+
+CSISA_platform_trial_kharif=CSISA_platform_trial_kharif[,c("group1","group2","mean")]
+
+# Convert to wide
+CSISA_platform_trial_kharif_wide=xtabs(mean ~ group1 + group2, data = CSISA_platform_trial_kharif)
+
+class(CSISA_platform_trial_kharif_wide)=NULL
+CSISA_platform_trial_kharif_wide=as.data.frame(CSISA_platform_trial_kharif_wide)
+
+library(lubridate)
+date=dmy(c("01-01-2010","01-01-2011","01-01-2012","01-01-2013","01-01-2014","01-01-2015","01-01-2016"))
+CSISA_platform_trial_kharif_wide$date=date
+
+library(fPortfolio)
+
+library(timeSeries)
+rownames(CSISA_platform_trial_kharif_wide) <- CSISA_platform_trial_kharif_wide$date
+CSISA_platform_trial_kharif_wide$date=NULL
+CSISA_platform_trial_kharif_wide_ts <- timeSeries(CSISA_platform_trial_kharif_wide)
+
+
+# Download the data
+#CSISA_platform_trial_kharif_wide_ts
+
+library(reactable)
+library(htmltools)
+library(fontawesome)
+
+htmltools::browsable(
+  tagList(
+    tags$button(
+      tagList(fontawesome::fa("download"), "Download as CSV"),
+      onclick = "Reactable.downloadDataCSV('CSISA_platform_trial_kharif_wide_ts', 'CSISA_platform_trial_kharif_wide_ts.csv')"
+    ),
+    
+    reactable(
+      CSISA_platform_trial_kharif_wide_ts,
+      searchable = TRUE,
+      defaultPageSize = 38,
+      elementId = "CSISA_platform_trial_kharif_wide_ts"
+    )
+  )
+)
+
+# Risk frontier 
+
+covOGKEstimate <- covOGKEstimator(CSISA_platform_trial_kharif_wide_ts)
+fastCovOGKEstimator <- function(x, spec = NULL, ...) covOGKEstimate
+
+covOGKSpec <- portfolioSpec()
+setEstimator(covOGKSpec) <- "fastCovOGKEstimator"
+setNFrontierPoints(covOGKSpec) <- 5
+
+covOGKFrontier <- portfolioFrontier(
+data = CSISA_platform_trial_kharif_wide_ts, spec = covOGKSpec)
+print(covOGKFrontier)
+
+setNFrontierPoints(covOGKSpec) <- 20
+covOGKFrontier <- portfolioFrontier(
+data = CSISA_platform_trial_kharif_wide_ts, spec = covOGKSpec)
+tailoredFrontierPlot(
+covOGKFrontier,
+mText = "OGK Robustified MV Portfolio",
+risk = "Sigma")
+
+col = divPalette(4, "RdYlGn")
+weightsPlot(covOGKFrontier, col = col, mtext = FALSE)
+text <- "OGK Robustified MV Portfolio"
+mtext(text, side = 3, line = 3, font = 2, cex = 0.9)
+
+```
+
+## Economic returns
+
+```{r}
+CSISA_platform_trial_kharif=describeBy(CSISA_platform_trial_k[,c("NET_RETURN","YEAR","SCENARIO")], group=c("YEAR","SCENARIO"), mat=TRUE)
+
+CSISA_platform_trial_kharif=subset(CSISA_platform_trial_kharif,!(is.na(CSISA_platform_trial_kharif$n)))
+
+CSISA_platform_trial_kharif=subset(CSISA_platform_trial_kharif,CSISA_platform_trial_kharif$vars==1)
+
+
+CSISA_platform_trial_kharif=CSISA_platform_trial_kharif[,c("group1","group2","mean")]
+
+# Convert to wide
+CSISA_platform_trial_kharif_wide=xtabs(mean ~ group1 + group2, data = CSISA_platform_trial_kharif)
+
+class(CSISA_platform_trial_kharif_wide)=NULL
+CSISA_platform_trial_kharif_wide=as.data.frame(CSISA_platform_trial_kharif_wide)
+
+library(lubridate)
+date=dmy(c("01-01-2010","01-01-2011","01-01-2012","01-01-2013","01-01-2014","01-01-2015","01-01-2016"))
+CSISA_platform_trial_kharif_wide$date=date
+
+library(fPortfolio)
+
+library(timeSeries)
+rownames(CSISA_platform_trial_kharif_wide) <- CSISA_platform_trial_kharif_wide$date
+CSISA_platform_trial_kharif_wide$date=NULL
+CSISA_platform_trial_kharif_wide_ts <- timeSeries(CSISA_platform_trial_kharif_wide)
+
+library(reactable)
+library(htmltools)
+library(fontawesome)
+
+htmltools::browsable(
+  tagList(
+    tags$button(
+      tagList(fontawesome::fa("download"), "Download as CSV"),
+      onclick = "Reactable.downloadDataCSV('CSISA_platform_trial_kharif_wide_ts', 'CSISA_platform_trial_kharif_wide_ts.csv')"
+    ),
+    
+    reactable(
+      CSISA_platform_trial_kharif_wide_ts,
+      searchable = TRUE,
+      defaultPageSize = 38,
+      elementId = "CSISA_platform_trial_kharif_wide_ts"
+    )
+  )
+)
+
+
+
+
+
+covOGKEstimate <- covOGKEstimator(CSISA_platform_trial_kharif_wide_ts)
+fastCovOGKEstimator <- function(x, spec = NULL, ...) covOGKEstimate
+
+covOGKSpec <- portfolioSpec()
+setEstimator(covOGKSpec) <- "fastCovOGKEstimator"
+setNFrontierPoints(covOGKSpec) <- 5
+
+covOGKFrontier <- portfolioFrontier(
+data = CSISA_platform_trial_kharif_wide_ts, spec = covOGKSpec)
+print(covOGKFrontier)
+
+setNFrontierPoints(covOGKSpec) <- 20
+covOGKFrontier <- portfolioFrontier(
+data = CSISA_platform_trial_kharif_wide_ts, spec = covOGKSpec)
+tailoredFrontierPlot(
+covOGKFrontier,
+mText = "OGK Robustified MV Portfolio",
+risk = "Sigma")
+
+col = divPalette(4, "RdYlGn")
+weightsPlot(covOGKFrontier, col = col, mtext = FALSE)
+text <- "OGK Robustified MV Portfolio"
+mtext(text, side = 3, line = 3, font = 2, cex = 0.9)
+
+
+
+```
+
+# Stochastic Dominance
+
+### Theoretical graphs and kolmogorov smirnov test
+
+```{r}
+# Theoretical graphs ------------------------------------------------------------
+
+# Truncated normal -----------------------
+library(truncnorm)
+g <- rtruncnorm (n=1000,a=4,b=8, mean=6,sd=0.8 )
+q <- rtruncnorm (n=1000,a=4,b=8, mean=5,sd=1 )
+f <- rtruncnorm (n=1000,a=3,b=9, mean=5,sd=2 )
+df <- data.frame(x = c(g, q, f),Scenarios = factor(rep(c("G","Q","F"), c(1000,1000,1000))))
+df <- df[order(df$x), ]
+
+df$ecdf <- ave(df$x, df$Scenarios, FUN=function(x) seq_along(x)/length(x))
+
+library(ggplot2)
+stochasticdominance=ggplot(df, aes(x, ecdf, colour =   Scenarios,linetype=Scenarios)) + 
+  geom_line(lwd=c(1.5))+
+  scale_linetype_manual(values = c(1,2,3))+
+  # theme(axis.ticks = element_blank(),axis.text.x = element_blank()) +
+  xlab("Yield (tons/ha)") +
+  ylab("Cumulative probability") +
+  scale_color_manual(values = c("darkred","darkgreen","orange"))+
+  theme(panel.grid.major.x = element_blank())+
+  theme(panel.grid.minor.x = element_blank())+
+  theme_bw(base_size=20)
+stochasticdominance
+
+
+# Kolmogorov smirnov test
+ks.test(g,f, alternative = "less")
+ks.test(g,q, alternative = "less")
+ks.test(q,f,alternative = "less")
+
+```
+
+# Certainty Equivalence
+
+```{r}
+
+library(ceRtainty)
+
+# Computing the CE values, for a RAC range of 0.5-4.0, and Power utility function.
+#
+# Obtaining the CE table
+certainty(data = CSISA_platform_trial_kharif_wide, ival = 0.5, fval = 4, utility = "Power")$CE_values
+
+# Obtaining the RAC vector
+certainty(data=CSISA_platform_trial_kharif_wide,ival=.5,fval=4,utility="Power")$RAC
+
+# Performing the CE plot
+certainty(data=CSISA_platform_trial_kharif_wide,ival=.5,fval=4,utility="Power")$CE_plot()
+
+
+```
+
+### Using Kharif data
+
+```{r}
+
+# Plot ECDF mapped by group
+ggplot(CSISA_platform_trial_kharif, aes(x = mean, color = group2)) +
+  stat_ecdf(geom = "step", size = 1) +
+  labs(title = "Empirical CDF",
+       x = "Net returns across scenarios",
+       y = "Cumulative Proportion") +
+  theme_bw(base_size=20)
+
+# Kolmogorov smirnov test
+
+
+ks.test(CSISA_platform_trial_kharif_wide_ts$`1`, CSISA_platform_trial_kharif_wide_ts$`2`)
+
+
+
+```

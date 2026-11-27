@@ -1,0 +1,24 @@
+---
+title: "Differentiated_analysis_next_gen_bci"
+format: 
+    html:
+      code-fold: true
+      code-tools: true
+fig-dpi: 300
+fig-align: center
+
+
+self-contained: true
+
+
+editor: visual
+toc: true
+toc-location: left
+number-sections: true
+execute: 
+  message: false
+  warning: false
+  echo: true
+---
+
+# Introduction
